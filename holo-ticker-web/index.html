@@ -1,0 +1,692 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<meta name="description" content="Track your Pokémon card collection: identify cards from photos, follow raw and graded prices, and see whether grading is worth it.">
+<link rel="icon" href="icon.png">
+<link rel="apple-touch-icon" href="icon.png">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font:14px system-ui,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>Holo Ticker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one dark motion canvas. Hero (headline + live value + fanned card stack), add-cards dock, holdings list, spring-open detail sheet. Single dark world by choice. */
+:root{
+  --bg:#000000; --panel:#0E0E10; --panel-2:#161618; --ink:#FFFFFF; --muted:#8A8A93; --line:rgba(255,255,255,.08); --line-2:rgba(255,255,255,.14);
+  --pink:#FF0088; --violet:#8855FF; --blue:#0099FF; --yellow:#FFD500; --green:#22DD88; --red:#FF4D5E;
+  --up:var(--green); --down:var(--red); --warn:var(--yellow);
+  --up-bg:rgba(34,221,136,.12); --down-bg:rgba(255,77,94,.13); --warn-bg:rgba(255,213,0,.12);
+  --chart:#7AA7FF; --accent:var(--pink);
+  --grad:linear-gradient(100deg,var(--pink) 0%,var(--violet) 45%,var(--blue) 100%);
+  --spring:cubic-bezier(.34,1.56,.64,1);
+  --spring-soft:cubic-bezier(.22,1.2,.36,1);
+  --f-display:"Inter Tight","Inter",system-ui,-apple-system,sans-serif;
+  --f-body:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+  color-scheme:dark;
+}
+@supports (transition-timing-function:linear(0,1)){:root{
+  --spring:linear(0,.009,.035 2.1%,.141 4.4%,.723 12.9%,.938 16.7%,1.017 19.4%,1.067,1.099 24.3%,1.108 26%,1.100 27.8%,1.078 30.1%,1.010 37%,.986 41.3%,.979 46%,.990 55.4%,1.002 65%,1 100%);}}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased;overflow-x:clip}
+.wrap{max-width:1200px;margin:0 auto;padding-inline:16px;padding-block:18px 80px;display:grid;gap:22px;position:relative}
+.wrap>*{min-width:0}
+.num{font-family:var(--f-mono);font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+h1,h2,h3{margin:0;text-wrap:balance;font-family:var(--f-display);letter-spacing:-.035em}
+.label{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.sub{color:var(--muted);font-size:14px}
+.note{font-size:12.5px;color:var(--muted)}
+a{color:var(--ink);text-decoration-color:var(--violet);text-underline-offset:3px}
+
+/* nav */
+nav.top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;position:relative;z-index:2}
+.brand{display:flex;align-items:center;gap:10px;font-family:var(--f-display);font-weight:800;font-size:18px;letter-spacing:-.03em}
+.mark{width:26px;height:26px;border-radius:8px;background:var(--grad);position:relative;flex:none;box-shadow:0 0 24px rgba(255,0,136,.45)}
+.mark::after{content:"";position:absolute;inset:7px;border-radius:50%;background:var(--bg)}
+.status{font-size:12.5px;color:var(--muted);display:flex;align-items:center;gap:8px;padding:6px 12px;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.03)}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 0 0 rgba(34,221,136,.6);animation:ping 2.4s ease-out infinite}
+@keyframes ping{0%{box-shadow:0 0 0 0 rgba(34,221,136,.55)}80%,100%{box-shadow:0 0 0 9px rgba(34,221,136,0)}}
+
+/* hero */
+.hero{position:relative;display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,.9fr);gap:28px;align-items:center;padding-block:34px 18px}
+@media (max-width:860px){.hero{grid-template-columns:1fr;padding-block:18px 4px}}
+.orb{position:absolute;inset:-120px 0 auto auto;width:620px;height:620px;max-width:100%;border-radius:50%;background:radial-gradient(closest-side,rgba(136,85,255,.38),rgba(255,0,136,.18) 45%,transparent 72%);filter:blur(30px);pointer-events:none;z-index:0;animation:drift 14s ease-in-out infinite alternate}
+@keyframes drift{to{transform:translate(-60px,40px) scale(1.04)}}
+.hero>*:not(.orb){position:relative;z-index:1;min-width:0}
+.eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:500;color:var(--ink);padding:5px 12px 5px 6px;border-radius:999px;background:rgba(255,255,255,.06);border:1px solid var(--line)}
+.eyebrow b{font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:2px 8px;border-radius:999px;background:var(--grad);color:#fff}
+.hero h1{font-size:clamp(40px,7.4vw,84px);line-height:.95;font-weight:800;letter-spacing:-.055em;margin-top:18px}
+.grad-text{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+.hero p.lede{font-size:clamp(16px,1.8vw,19px);color:var(--muted);max-width:34ch;margin:18px 0 0}
+.hero .actions{margin-top:26px}
+.value-line{display:flex;align-items:baseline;flex-wrap:wrap;gap:12px;margin-top:30px}
+.value-line .big{font-family:var(--f-display);font-weight:700;font-size:clamp(30px,4.4vw,46px);letter-spacing:-.04em;font-variant-numeric:tabular-nums}
+
+/* fanned cards */
+.fan{position:relative;height:340px;perspective:1100px}
+@media (max-width:860px){.fan{height:250px}}
+.fcard{position:absolute;left:50%;top:50%;width:190px;aspect-ratio:63/88;margin:-133px 0 0 -95px;border-radius:14px;overflow:hidden;
+  background:var(--panel-2);border:1px solid var(--line-2);box-shadow:0 30px 60px -20px rgba(0,0,0,.8),0 0 0 1px rgba(255,255,255,.04) inset;
+  transform:translate(var(--x),var(--y)) rotate(var(--r)) scale(var(--s,1));transition:transform .7s var(--spring),box-shadow .4s;cursor:pointer;will-change:transform}
+@media (max-width:860px){.fcard{width:140px;margin:-98px 0 0 -70px}}
+.fcard img{width:100%;height:100%;object-fit:cover;display:block}
+.fcard .foil{position:absolute;inset:0;background:linear-gradient(115deg,transparent 30%,rgba(255,255,255,.22) 45%,rgba(136,85,255,.25) 52%,transparent 66%);background-size:250% 100%;background-position:100% 0;mix-blend-mode:screen;transition:background-position .9s ease}
+.fcard:hover .foil{background-position:0 0}
+.fcard .ph{position:absolute;inset:0;display:grid;align-content:end;padding:14px;background:
+  radial-gradient(120% 80% at 20% 10%,rgba(255,0,136,.55),transparent 60%),radial-gradient(120% 80% at 90% 80%,rgba(0,153,255,.5),transparent 60%),#121214}
+.fcard .ph b{font-family:var(--f-display);font-size:18px;letter-spacing:-.03em;line-height:1.05}
+.fcard .ph small{color:rgba(255,255,255,.7);font-size:11px}
+.fcard .tagv{position:absolute;left:10px;top:10px;font-family:var(--f-mono);font-size:11px;font-weight:500;padding:3px 8px;border-radius:999px;background:rgba(0,0,0,.65);backdrop-filter:blur(6px);border:1px solid var(--line-2)}
+.fan:hover .fcard:nth-child(1){--x:-120px !important;--r:-14deg !important}
+.fan:hover .fcard:nth-child(3){--x:120px !important;--r:14deg !important}
+.fcard:hover{--s:1.07 !important;--y:-14px !important;z-index:5;box-shadow:0 40px 80px -20px rgba(136,85,255,.55)}
+
+/* buttons */
+.btn{font:inherit;font-size:14px;font-weight:600;border:1px solid var(--line-2);background:rgba(255,255,255,.05);color:var(--ink);border-radius:999px;padding:9px 16px;cursor:pointer;display:inline-flex;align-items:center;gap:8px;
+  transition:transform .45s var(--spring),background .2s,border-color .2s}
+.btn:hover{transform:scale(1.04);background:rgba(255,255,255,.09);border-color:rgba(255,255,255,.25)}
+.btn:active{transform:scale(.96);transition-duration:.12s}
+.btn.primary{background:#fff;color:#000;border-color:#fff}
+.btn.primary:hover{background:#fff}
+.btn.danger{color:var(--red)}
+.btn:disabled{opacity:.45;cursor:default;transform:none}
+.btn:focus-visible,.row:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible,.fcard:focus-visible{outline:2px solid var(--violet);outline-offset:3px}
+.actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+
+/* panels */
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:24px}
+.strip{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:24px;overflow:hidden}
+.strip>div{background:var(--panel);padding:18px 22px;min-width:0}
+.strip .big{font-family:var(--f-display);font-weight:700;font-size:clamp(22px,3vw,30px);letter-spacing:-.04em;font-variant-numeric:tabular-nums;white-space:nowrap;margin-top:4px}
+@media (max-width:720px){.strip{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+.dock{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:16px}
+@media (max-width:820px){.dock{grid-template-columns:1fr}}
+.drop{position:relative;padding:26px;display:grid;gap:12px;justify-items:start;border-radius:24px;background:var(--panel);border:1px solid var(--line);overflow:hidden;transition:transform .5s var(--spring)}
+.drop::before{content:"";position:absolute;inset:-1px;border-radius:inherit;padding:1.5px;background:conic-gradient(from var(--ang,0deg),var(--pink),var(--violet),var(--blue),var(--yellow),var(--pink));
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;opacity:.0;transition:opacity .3s}
+.drop.over{transform:scale(1.015)}
+.drop.over::before,.drop:hover::before{opacity:1;animation:spin 3s linear infinite}
+@property --ang{syntax:"<angle>";inherits:false;initial-value:0deg}
+@keyframes spin{to{--ang:360deg}}
+.drop h2{font-size:24px;font-weight:700}
+.drop>*{position:relative}
+.queue{display:grid;gap:8px;width:100%}
+.qitem{display:flex;gap:10px;align-items:center;font-size:13px;background:var(--panel-2);border:1px solid var(--line);border-radius:14px;padding:8px 10px;min-width:0;animation:rise .6s var(--spring) both}
+.qitem img{width:30px;height:42px;object-fit:cover;border-radius:5px;flex:none}
+.qitem span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.manual{padding:24px;display:grid;gap:12px;align-content:start}
+.manual h3{font-size:20px;font-weight:700}
+.fields{display:grid;grid-template-columns:2fr 2fr 1fr;gap:8px}
+@media (max-width:480px){.fields{grid-template-columns:1fr}}
+input,select{font:inherit;font-size:14px;color:var(--ink);background:var(--panel-2);border:1px solid var(--line);border-radius:12px;padding:9px 12px;width:100%;min-width:0;transition:border-color .2s,box-shadow .2s}
+input:focus,select:focus{border-color:var(--violet);box-shadow:0 0 0 4px rgba(136,85,255,.18);outline:none}
+.banner{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;background:var(--warn-bg);border:1px solid rgba(255,213,0,.22);border-radius:18px;padding:12px 16px;font-size:14px}
+
+/* holdings */
+.hhead{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;padding:20px 22px 14px}
+.hhead h2{font-size:28px;font-weight:700}
+.tape{overflow-x:auto;padding:0 8px 8px}
+table{border-collapse:separate;border-spacing:0;width:100%;min-width:740px}
+th{text-align:left;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:600;padding:8px 14px;white-space:nowrap}
+th.r,td.r{text-align:right}
+td{padding:10px 14px;vertical-align:middle;border-top:1px solid var(--line)}
+tr.row{cursor:pointer}
+tr.row td{transition:background .25s}
+tr.row:hover td{background:rgba(255,255,255,.035)}
+tr.row td:first-child{border-radius:14px 0 0 14px}
+tr.row td:last-child{border-radius:0 14px 14px 0}
+tr.row.sel td{background:rgba(136,85,255,.12);border-top-color:transparent}
+tr.row.sel+tr.row td{border-top-color:transparent}
+tr.row.enter td{animation:rise .7s var(--spring) both;animation-delay:calc(var(--i,0)*55ms)}
+@keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+.cname{display:flex;gap:12px;align-items:center;min-width:0}
+.thumb{width:38px;height:53px;border-radius:7px;object-fit:cover;background:var(--panel-2);border:1px solid var(--line-2);flex:none;display:grid;place-items:center;font-size:10px;color:var(--muted);transition:transform .5s var(--spring)}
+tr.row:hover .thumb{transform:rotate(-6deg) scale(1.08)}
+.cname b{display:block;font-weight:600;letter-spacing:-.01em}
+.cname small{color:var(--muted)}
+.pill{display:inline-block;font-family:var(--f-mono);font-size:12px;font-weight:500;padding:3px 9px;border-radius:999px;white-space:nowrap}
+.pill.up{background:var(--up-bg);color:var(--up)}
+.pill.down{background:var(--down-bg);color:var(--down)}
+.pill.flat{background:rgba(255,255,255,.06);color:var(--muted)}
+.verdict{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;padding:5px 11px;border-radius:999px;white-space:nowrap}
+.verdict::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.v-go{background:var(--up-bg);color:var(--up)}
+.v-maybe{background:var(--warn-bg);color:var(--warn)}
+.v-no{background:rgba(255,255,255,.06);color:var(--muted)}
+.tag-ex{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;background:var(--warn-bg);color:var(--warn);padding:2px 7px;border-radius:999px;margin-left:8px;vertical-align:2px;font-family:var(--f-body)}
+.empty{padding:30px 22px;color:var(--muted)}
+.draw{stroke-dasharray:1;stroke-dashoffset:1;animation:draw 1.1s cubic-bezier(.65,0,.35,1) forwards}
+@keyframes draw{to{stroke-dashoffset:0}}
+.fadein{animation:fade .8s .5s ease both}
+@keyframes fade{from{opacity:0}}
+
+/* detail */
+.detail{padding:24px;display:grid;grid-template-columns:minmax(0,240px) minmax(0,1fr);gap:26px;transform-origin:50% 0}
+.detail.pop{animation:pop .8s var(--spring) both}
+@keyframes pop{from{opacity:0;transform:translateY(24px) scale(.97)}to{opacity:1;transform:none}}
+@media (max-width:760px){.detail{grid-template-columns:1fr}}
+.photo{width:100%;max-width:240px;aspect-ratio:63/88;object-fit:cover;border-radius:16px;border:1px solid var(--line-2);background:var(--panel-2);display:grid;place-items:center;color:var(--muted);font-size:13px;text-align:center;box-shadow:0 30px 60px -25px rgba(136,85,255,.5);transition:transform .7s var(--spring)}
+.photo:hover{transform:perspective(800px) rotateY(-10deg) rotateX(4deg) scale(1.03)}
+.dmain{display:grid;gap:20px;min-width:0}
+.dtitle{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px;align-items:flex-start}
+.dtitle h2{font-size:clamp(26px,4vw,40px);font-weight:800;line-height:1}
+.quote{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.quote .px{font-family:var(--f-display);font-weight:700;font-size:40px;letter-spacing:-.04em;font-variant-numeric:tabular-nums}
+.seg{position:relative;display:inline-flex;background:var(--panel-2);border:1px solid var(--line);border-radius:999px;padding:3px}
+.seg button{position:relative;z-index:1;font:inherit;font-size:12.5px;font-weight:600;background:transparent;color:var(--muted);border:0;padding:6px 12px;border-radius:999px;cursor:pointer;transition:color .25s}
+.seg button[aria-pressed="true"]{color:#000}
+.seg .knob{position:absolute;z-index:0;top:3px;bottom:3px;border-radius:999px;background:#fff;transition:left .55s var(--spring),width .55s var(--spring)}
+.chartbox{background:linear-gradient(180deg,rgba(122,167,255,.06),transparent 60%),var(--panel-2);border:1px solid var(--line);border-radius:18px;padding:10px 6px 6px}
+.chartbox>svg{display:block;width:100%;height:auto}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted);padding:4px 12px}
+.grid2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}
+@media (max-width:900px){.grid2{grid-template-columns:1fr}}
+.card-sec{background:var(--panel-2);border:1px solid var(--line);border-radius:18px;padding:16px;display:grid;gap:12px;align-content:start;min-width:0}
+.card-sec h3{font-size:17px;font-weight:700}
+.gtab{width:100%;min-width:0;border-collapse:collapse}
+.gtab td,.gtab th{padding:7px 4px;border-top:1px solid var(--line);font-size:14px}
+.gtab th{font-size:11px;border-top:0}
+.odds{display:grid;gap:8px}
+.odd{display:grid;grid-template-columns:70px minmax(0,1fr) 44px;gap:10px;align-items:center;font-size:13px}
+.bar{height:10px;background:rgba(255,255,255,.07);border-radius:999px;overflow:hidden}
+.bar i{display:block;height:100%;border-radius:999px;background:var(--grad);transform-origin:0 50%;animation:grow 1s var(--spring) both;animation-delay:calc(var(--i,0)*80ms + 150ms)}
+@keyframes grow{from{transform:scaleX(0)}}
+.ev{display:grid}
+.evrow{display:grid;grid-template-columns:52px minmax(0,1fr) auto;gap:8px;align-items:center;font-size:13px;padding:7px 0;border-top:1px solid var(--line)}
+.cond{display:grid;grid-template-columns:auto minmax(0,1fr);gap:5px 14px;font-size:13px;margin:0}
+.cond dt{color:var(--muted)}
+.cond dd{margin:0}
+details.settings{padding:16px 22px}
+details.settings summary{cursor:pointer;font-weight:600;list-style:none;display:flex;align-items:center;gap:10px}
+details.settings summary::before{content:"+";display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;background:rgba(255,255,255,.08);transition:transform .5s var(--spring)}
+details.settings[open] summary::before{transform:rotate(45deg)}
+details.settings summary::-webkit-details-marker{display:none}
+.fees{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin-top:12px}
+@media (max-width:640px){.fees{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.fees label{display:grid;gap:5px;font-size:12px;color:var(--muted)}
+.reveal{animation:rise .9s var(--spring) both;animation-delay:calc(var(--d,0)*90ms)}
+footer.fine{color:var(--muted);font-size:12.5px;max-width:80ch}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}.draw{stroke-dashoffset:0}}
+</style>
+
+</head>
+<body>
+<div class="wrap">
+  <nav class="top reveal" style="--d:0">
+    <div class="brand"><div class="mark" aria-hidden="true"></div>Holo Ticker</div>
+    <div class="status"><span class="dot" aria-hidden="true"></span><span id="feedStatus">Loading…</span></div>
+  </nav>
+
+  <section class="hero">
+    <div class="orb" aria-hidden="true"></div>
+    <div>
+      <span class="eyebrow reveal" style="--d:1"><b>Live</b> Prices refresh every 30 minutes while open</span>
+      <h1 class="reveal" style="--d:2">Your binder,<br><span class="grad-text">priced like stocks.</span></h1>
+      <p class="lede reveal" style="--d:3">Snap a card. Claude names it, grades it from the photo, and tells you if PSA, BGS or CGC is worth the fee.</p>
+      <div class="actions reveal" style="--d:4">
+        <label class="btn primary" for="fileIn">Add card photos</label>
+        <a class="btn" href="#holdings">View holdings</a>
+      </div>
+      <div class="value-line reveal" style="--d:5"><span class="label">Raw value</span><span class="big" id="heroTotal">—</span><span id="heroChange"></span></div>
+    </div>
+    <div class="fan reveal" style="--d:3" id="fan" aria-label="Your most valuable cards"></div>
+  </section>
+
+  <section class="strip reveal" style="--d:6" aria-label="Portfolio summary">
+    <div><div class="label">Raw value</div><div class="big" id="sTotal">—</div></div>
+    <div><div class="label">Recent change</div><div class="big" id="sChange">—</div></div>
+    <div><div class="label">Cards</div><div class="big" id="sCount">—</div></div>
+    <div><div class="label">Worth grading</div><div class="big" id="sGrade">—</div></div>
+  </section>
+
+  <section class="dock">
+    <div class="drop" id="drop">
+      <h2>Drop a card. Get a price.</h2>
+      <div class="sub">A clear, flat, well-lit photo of the front, one card per photo. Claude reads the card and checks centering, corners, edges and surface for a grade estimate.</div>
+      <div class="actions">
+        <label class="btn primary" for="fileIn">Choose photos</label>
+        <input id="fileIn" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden>
+        <span class="note">or drop them here</span>
+      </div>
+      <div class="note" id="sampleNote" hidden></div>
+      <div class="queue" id="queue"></div>
+    </div>
+    <form class="manual panel" id="manual">
+      <h3>Add by name</h3>
+      <div class="sub">For when a photo isn't handy.</div>
+      <div class="fields">
+        <input id="mName" placeholder="Card name, e.g. Charizard" required>
+        <input id="mSet" placeholder="Set, e.g. Base Set">
+        <input id="mNum" placeholder="No. e.g. 4">
+      </div>
+      <div class="actions"><button class="btn" type="submit">Add card</button><span class="note" id="mMsg"></span></div>
+    </form>
+  </section>
+
+  <div class="banner" id="exBanner" hidden>
+    <span>Cards marked <b>Example</b> show how the page works with real prices. Remove them whenever you like.</span>
+    <span class="actions"><button class="btn" id="exRemove" type="button">Remove examples</button></span>
+  </div>
+
+  <section class="holdings panel" id="holdings">
+    <div class="hhead">
+      <h2>Holdings</h2>
+      <div class="actions">
+        <label class="sub" for="sortSel">Sort</label>
+        <select id="sortSel" style="width:auto">
+          <option value="value">Highest value</option>
+          <option value="change">Biggest move</option>
+          <option value="gain">Best grading gain</option>
+          <option value="added">Recently added</option>
+        </select>
+      </div>
+    </div>
+    <div class="tape">
+      <table>
+        <thead><tr><th>Card</th><th class="r">Raw</th><th class="r">Change</th><th>Trend</th><th class="r">PSA 9</th><th class="r">PSA 10</th><th>Grading</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+    <div class="empty" id="empty" hidden>No cards yet. Add your first card with a photo above, and its prices appear here after the next price check.</div>
+  </section>
+
+  <section class="detail panel" id="detail" hidden></section>
+
+  <details class="settings panel" id="settings">
+    <summary>Settings: server and grading fees</summary>
+    <p class="note" style="margin-top:12px">Your Holo Ticker server holds the Claude and PriceCharting keys (see the README). The address and app key are saved in this browser only.</p>
+    <div class="fields" style="grid-template-columns:2fr 1fr;margin-top:8px">
+      <input id="sUrl" placeholder="https://holo-ticker.yourname.workers.dev" autocomplete="off" aria-label="Server address">
+      <input id="sKey" type="password" placeholder="App key" autocomplete="off" aria-label="App key">
+    </div>
+    <div class="actions" style="margin-top:10px"><button class="btn primary" id="sSave" type="button">Save and test</button><span class="note" id="sMsg"></span></div>
+    <hr style="border:0;border-top:1px solid var(--line);margin:18px 0 4px">
+    <p class="note">Per-card fees in USD. Defaults are each company's cheapest standard tier as reported in mid-2026 (PSA's Value tiers were paused). Change them to what you'd actually pay. Shipping is round-trip per card, including insurance.</p>
+    <div class="fees">
+      <label>PSA<input id="fPSA" type="number" step="0.01" min="0"></label>
+      <label>BGS<input id="fBGS" type="number" step="0.01" min="0"></label>
+      <label>CGC<input id="fCGC" type="number" step="0.01" min="0"></label>
+      <label>SGC<input id="fSGC" type="number" step="0.01" min="0"></label>
+      <label>Shipping<input id="fShip" type="number" step="0.01" min="0"></label>
+    </div>
+    <div class="actions" style="margin-top:12px"><button class="btn" id="feeSave" type="button">Save fees</button><span class="note" id="feeMsg"></span></div>
+  </details>
+
+  <footer class="fine">Prices come from PriceCharting's sold-listing averages and refresh every 30 minutes while this page is open; most card markets only move a few times a day. Your collection is saved in this browser only. Grades 7–9 are mostly PSA sales. Grade estimates from photos can't see fine surface scratches or print lines, so treat them as a first screen, not a promise. Not financial advice.</footer>
+</div>
+
+<script>
+(function(){
+const DEFAULT_FEES={PSA:79.99,BGS:14.95,CGC:17,SGC:25,ship:20};
+const GRADERS=["PSA","BGS","CGC","SGC"];
+const TEN_KEY={PSA:"psa10",BGS:"bgs10",CGC:"cgc10",SGC:"sgc10"};
+let seen=new Set(), lastDetail=null, firstSnap=true, animSpark=false, knobPrev=null;
+let db=null, cards=[], fees={...DEFAULT_FEES}, selId=null, series="ungraded";
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const usd=(n,d)=>n==null||isNaN(n)?"—":"$"+Number(n).toLocaleString("en-US",{minimumFractionDigits:d??(Math.abs(n)<100?2:0),maximumFractionDigits:d??(Math.abs(n)<100?2:0)});
+const sgn=n=>n>0?"+":n<0?"−":"";
+const num=v=>{const n=Number(v);return v==null||v===""||isNaN(n)?null:n};
+
+const reduce=matchMedia("(prefers-reduced-motion: reduce)").matches;
+const countState=new WeakMap();
+function countTo(el,to,fmt){
+  const from=countState.get(el)??0;countState.set(el,to);
+  if(reduce||from===to){el.textContent=fmt(to);return;}
+  const t0=performance.now(),dur=1100;
+  const step=t=>{const k=Math.min(1,(t-t0)/dur);const e=1-Math.pow(1-k,4);el.textContent=fmt(from+(to-from)*e);if(k<1&&countState.get(el)===to)requestAnimationFrame(step);};
+  requestAnimationFrame(step);
+}
+function placeKnob(box){
+  const seg=box.querySelector(".seg");if(!seg)return;const k=seg.querySelector(".knob");const on=seg.querySelector('[aria-pressed="true"]');if(!k||!on)return;
+  const to={left:on.offsetLeft,width:on.offsetWidth};
+  if(knobPrev){k.style.transition="none";k.style.left=knobPrev.left+"px";k.style.width=knobPrev.width+"px";void k.offsetWidth;k.style.transition="";}
+  k.style.left=to.left+"px";k.style.width=to.width+"px";knobPrev=to;
+}
+function renderFan(list){
+  const fan=$("fan");if(!fan)return;
+  const top=list.filter(c=>c.status==="priced").sort((a,b)=>(rawOf(b)??0)-(rawOf(a)??0)).slice(0,3);
+  const pick=top.length?top:list.slice(0,3);
+  const key=pick.map(c=>c.id+":"+(rawOf(c)??"")).join("|");
+  if(fan.dataset.key===key)return;fan.dataset.key=key;
+  const pos=[{x:-70,y:14,r:-9},{x:0,y:-8,r:0},{x:70,y:14,r:9}];
+  const order=pick.length===3?[pick[1],pick[0],pick[2]]:pick.length===2?[pick[1],pick[0]]:pick;
+  const P=order.length===3?pos:order.length===2?[pos[0],pos[1]]:[pos[1]];
+  fan.innerHTML=order.map((c,i)=>`<div class="fcard" tabindex="0" role="button" data-id="${esc(c.id)}" style="--x:${P[i].x}px;--y:${P[i].y}px;--r:${P[i].r}deg;z-index:${c===pick[0]?3:1}">
+    ${c.thumb?`<img src="${esc(c.thumb)}" alt="">`:`<div class="ph"><b>${esc(c.name)}</b><small>${esc([c.set,c.number?"#"+c.number:""].filter(Boolean).join(" · "))}</small></div>`}
+    <div class="foil"></div>${rawOf(c)!=null?`<span class="tagv">${usd(rawOf(c))}</span>`:""}</div>`).join("")||
+    `<div class="fcard" style="--x:0px;--y:0px;--r:0deg"><div class="ph"><b>Your first card goes here</b><small>Add a photo to start</small></div><div class="foil"></div></div>`;
+  fan.querySelectorAll(".fcard[data-id]").forEach(el=>{
+    const go=()=>{selId=el.dataset.id;series="ungraded";render();$("detail").scrollIntoView({behavior:reduce?"auto":"smooth",block:"start"});};
+    el.onclick=go;el.onkeydown=e=>{if(e.key==="Enter")go();};
+  });
+}
+function rawOf(c){const p=c.prices||{};return num(p.ungraded)}
+function chgOf(c){return num((c.changes||{}).ungraded)}
+function pillHTML(ch,base){
+  if(ch==null)return '<span class="pill flat">—</span>';
+  const cls=ch>0?"up":ch<0?"down":"flat";
+  const pct=base&&base-ch!==0?` ${sgn(ch)}${Math.abs(ch/(base-ch)*100).toFixed(1)}%`:"";
+  return `<span class="pill ${cls}">${sgn(ch)}${usd(Math.abs(ch))}${pct}</span>`;
+}
+function odds(c){
+  const o=c.odds||{};let a={"10":num(o["10"])||0,"9":num(o["9"])||0,"8":num(o["8"])||0,"7":num(o["7"])||0};
+  const s=a["10"]+a["9"]+a["8"]+a["7"];
+  if(s<=0)return null;
+  for(const k in a)a[k]/=s;return a;
+}
+function gradeEV(c,g){
+  const p=c.prices||{};const o=odds(c);const raw=rawOf(c);
+  const ten=num(p[TEN_KEY[g]]);const v9=num(p.grade9),v8=num(p.grade8),v7=num(p.grade7);
+  if(!o||raw==null||ten==null||v9==null)return null;
+  const low=v7??v8??raw;
+  const gross=o["10"]*ten+o["9"]*v9+o["8"]*(v8??low)+o["7"]*low;
+  const cost=(num(fees[g])??0)+(num(fees.ship)??0);
+  return {gross,cost,net:gross-cost,gain:gross-cost-raw};
+}
+function advice(c){
+  const raw=rawOf(c);
+  if(c.status!=="priced"||raw==null)return {cls:"v-no",txt:c.status==="not_found"?"No price match":"Waiting for prices",gain:null};
+  if(!odds(c))return {cls:"v-no",txt:"Add a photo to estimate",gain:null};
+  let best=null;
+  for(const g of GRADERS){const e=gradeEV(c,g);if(e&&(!best||e.gain>best.e.gain))best={g,e};}
+  if(!best)return {cls:"v-no",txt:"Not enough graded sales",gain:null};
+  const th=Math.max(20,raw*0.2);
+  if(best.e.gain>th)return {cls:"v-go",txt:`Grade it · ${best.g}`,gain:best.e.gain,best};
+  if(best.e.gain>0)return {cls:"v-maybe",txt:`Borderline · ${best.g}`,gain:best.e.gain,best};
+  return {cls:"v-no",txt:"Keep raw",gain:best.e.gain,best};
+}
+function trendPoints(c,key){
+  const pts=[];
+  for(const h of (c.history||[])){const v=num(h[key]);if(v!=null&&h.t)pts.push({t:+h.t,v,kind:"snap"});}
+  return pts.sort((a,b)=>a.t-b.t);
+}
+const SALE_LABELS={ungraded:["ungraded","raw"],grade8:["psa 8","grade 8"],grade9:["psa 9","grade 9"],psa10:["psa 10"]};
+function salePoints(c,key){
+  const labs=SALE_LABELS[key]||[];
+  return (c.sales||[]).filter(s=>labs.includes(String(s.grade||"").toLowerCase())).map(s=>({t:Date.parse(s.date+"T12:00:00Z"),v:num(s.price)})).filter(p=>p.v!=null&&!isNaN(p.t)).sort((a,b)=>a.t-b.t);
+}
+function spark(c){
+  let pts=trendPoints(c,"ungraded");
+  if(pts.length<2)pts=salePoints(c,"ungraded");
+  if(pts.length<2)return '<span class="note">building…</span>';
+  const W=96,H=28;const xs=pts.map(p=>p.t),ys=pts.map(p=>p.v);
+  const x0=Math.min(...xs),x1=Math.max(...xs),y0=Math.min(...ys),y1=Math.max(...ys);
+  const X=t=>x1===x0?W/2:2+(t-x0)/(x1-x0)*(W-4),Y=v=>y1===y0?H/2:H-3-(v-y0)/(y1-y0)*(H-6);
+  const d=pts.map((p,i)=>(i?"L":"M")+X(p.t).toFixed(1)+" "+Y(p.v).toFixed(1)).join(" ");
+  const up=pts[pts.length-1].v>=pts[0].v;const col=up?"var(--up)":"var(--down)";
+  const last=pts[pts.length-1];
+  return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" aria-hidden="true"><path d="${d} L${X(last.t).toFixed(1)} ${H} L${X(pts[0].t).toFixed(1)} ${H} Z" fill="${col}" opacity=".14"/><path class="fadein" d="${d} L${X(last.t).toFixed(1)} ${H} L${X(pts[0].t).toFixed(1)} ${H} Z" fill="${col}" opacity="0"/><path class="${animSpark?"draw":""}" pathLength="1" d="${d}" fill="none" stroke="${col}" stroke-width="1.6" stroke-linecap="round"/><circle cx="${X(last.t)}" cy="${Y(last.v)}" r="2.4" fill="${col}"/></svg>`;
+}
+function thumbHTML(c,cls){
+  return c.thumb?`<img class="${cls}" src="${esc(c.thumb)}" alt="">`:`<div class="${cls}">${cls==="photo"?"No photo<br>(added by name)":"—"}</div>`;
+}
+function render(){
+  const sort=$("sortSel").value;
+  const list=[...cards];
+  const key={value:c=>-(rawOf(c)??-1),change:c=>-Math.abs(chgOf(c)??0),gain:c=>-(advice(c).gain??-1e9),added:c=>-(c.addedAt||0)}[sort];
+  list.sort((a,b)=>key(a)-key(b));
+  let total=0,chg=0,goCount=0,priced=0;
+  for(const c of cards){const r=rawOf(c);if(r!=null){total+=r*(c.qty||1);priced++;}const ch=chgOf(c);if(ch!=null)chg+=ch*(c.qty||1);if(advice(c).cls==="v-go")goCount++;}
+  countTo($("sTotal"),total,v=>usd(v,0));countTo($("heroTotal"),total,v=>usd(v,0));$("heroChange").innerHTML=cards.length?pillHTML(chg,total):"";
+  $("sChange").innerHTML=cards.length?pillHTML(chg,total).replace('class="pill','style="font-size:inherit" class="pill'):"—";
+  $("sCount").textContent=cards.length+(priced<cards.length?` (${cards.length-priced} pricing)`:"");
+  countTo($("sGrade"),goCount,v=>String(Math.round(v)));
+  $("empty").hidden=cards.length>0;
+  $("exBanner").hidden=!cards.some(c=>c.example);
+  let ni=0;
+  $("rows").innerHTML=list.map(c=>{
+    const a=advice(c);const p=c.prices||{};const fresh=!seen.has(c.id);if(fresh)seen.add(c.id);
+    return `<tr class="row${c.id===selId?" sel":""}${fresh?" enter":""}" style="--i:${fresh?ni++:0}" tabindex="0" data-id="${esc(c.id)}">
+      <td><div class="cname">${thumbHTML(c,"thumb")}<div><b>${esc(c.name||"Unknown card")}${c.example?'<span class="tag-ex">Example</span>':""}</b><small>${esc([c.set,c.number?"#"+c.number:"",c.variant].filter(Boolean).join(" · "))}</small></div></div></td>
+      <td class="r num">${c.status==="priced"?usd(rawOf(c)):'<span class="note">'+(c.status==="not_found"?"no match":"pending")+'</span>'}</td>
+      <td class="r">${c.status==="priced"?pillHTML(chgOf(c),rawOf(c)):""}</td>
+      <td>${c.status==="priced"?spark(c):""}</td>
+      <td class="r num">${usd(num(p.grade9))}</td>
+      <td class="r num">${usd(num(p.psa10))}</td>
+      <td><span class="verdict ${a.cls}">${esc(a.txt)}</span></td></tr>`;
+  }).join("");
+  renderDetail();
+  renderFan(list);
+  const last=cards.map(c=>c.priceUpdatedAt||0).reduce((a,b)=>Math.max(a,b),0);
+  $("feedStatus").textContent=db?(last?`Prices checked ${ago(last)}`:"Waiting for the first price check"):"Loading…";
+  if(!server.url)$("feedStatus").textContent="Set up your server in Settings";
+}
+function ago(t){const m=Math.round((Date.now()-t)/60000);if(m<1)return"just now";if(m<60)return m+" min ago";const h=Math.round(m/60);if(h<48)return h+" h ago";return Math.round(h/24)+" days ago";}
+
+function chartSVG(c,key){
+  const snaps=trendPoints(c,key),sales=salePoints(c,key);
+  const all=[...snaps,...sales];
+  if(!all.length)return `<div class="empty">No price points for this grade yet.</div>`;
+  const W=680,H=250,L=58,R=14,T=14,B=30;
+  let x0=Math.min(...all.map(p=>p.t)),x1=Math.max(...all.map(p=>p.t));
+  if(x1-x0<86400000*6){const mid=(x0+x1)/2;x0=mid-86400000*3.5;x1=mid+86400000*3.5;}
+  let y0=Math.min(...all.map(p=>p.v)),y1=Math.max(...all.map(p=>p.v));
+  if(y1===y0){y0*=0.9;y1*=1.1;}
+  const step=niceStep((y1-y0)/4);y0=Math.max(0,Math.floor(y0/step)*step);y1=Math.ceil(y1/step)*step;
+  const X=t=>L+(t-x0)/(x1-x0)*(W-L-R),Y=v=>T+(1-(v-y0)/(y1-y0))*(H-T-B);
+  let g="";
+  for(let v=y0;v<=y1+1e-9;v+=step){g+=`<line x1="${L}" x2="${W-R}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--line)" stroke-width="1"/><text x="${L-8}" y="${Y(v)+4}" text-anchor="end" font-size="11" fill="var(--muted)" font-family="IBM Plex Mono, monospace">${usd(v,v<100?0:0)}</text>`;}
+  const days=(x1-x0)/86400000;const ticks=5;
+  for(let i=0;i<=ticks;i++){const t=x0+(x1-x0)*i/ticks;const d=new Date(t);g+=`<text x="${X(t)}" y="${H-10}" text-anchor="${i===0?"start":i===ticks?"end":"middle"}" font-size="11" fill="var(--muted)">${d.toLocaleDateString("en-US",{month:"short",day:"numeric"})}</text>`;}
+  let line="";
+  if(snaps.length>=2){const d=snaps.map((p,i)=>(i?"L":"M")+X(p.t).toFixed(1)+" "+Y(p.v).toFixed(1)).join(" ");
+    line=`<defs><linearGradient id="lg" x1="0" x2="1"><stop offset="0" stop-color="#FF0088"/><stop offset=".5" stop-color="#8855FF"/><stop offset="1" stop-color="#0099FF"/></linearGradient></defs><path class="fadein" d="${d} L${X(snaps.at(-1).t)} ${H-B} L${X(snaps[0].t)} ${H-B} Z" fill="#8855FF" opacity=".12"/><path class="draw" pathLength="1" d="${d}" fill="none" stroke="url(#lg)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>`;}
+  const dots=sales.map((p,i)=>`<circle cx="${X(p.t).toFixed(1)}" cy="${Y(p.v).toFixed(1)}" r="3.4" fill="#FFD500" stroke="#161618" stroke-width="1.5" style="animation:rise .6s var(--spring) both;animation-delay:${(i*35)+300}ms"><title>${new Date(p.t).toLocaleDateString()} sold ${usd(p.v)}</title></circle>`).join("");
+  const sn=snaps.map(p=>`<circle cx="${X(p.t).toFixed(1)}" cy="${Y(p.v).toFixed(1)}" r="${snaps.length===1?5:2.6}" fill="var(--chart)"><title>${new Date(p.t).toLocaleString()} market ${usd(p.v)}</title></circle>`).join("");
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Price chart">${g}${line}${dots}${sn}</svg>`;
+}
+function niceStep(r){if(r<=0)return 1;const e=Math.pow(10,Math.floor(Math.log10(r)));const f=r/e;return (f<=1?1:f<=2?2:f<=5?5:10)*e;}
+
+function renderDetail(){
+  const box=$("detail");const c=cards.find(x=>x.id===selId);
+  if(!c){box.hidden=true;return;}
+  box.hidden=false;
+  if(lastDetail!==c.id){box.classList.remove("pop");void box.offsetWidth;box.classList.add("pop");lastDetail=c.id;}
+  const p=c.prices||{},v=c.volume||{},ch=c.changes||{};const a=advice(c);const o=odds(c);const cond=c.condition||{};
+  const SER=[["ungraded","Raw"],["grade8","PSA 8"],["grade9","PSA 9"],["psa10","PSA 10"]];
+  const cur=num(p[series]);
+  const gradedRows=[["Raw (ungraded)","ungraded"],["Grade 7","grade7"],["Grade 8","grade8"],["Grade 9","grade9"],["Grade 9.5 (BGS/CGC)","grade95"],["PSA 10","psa10"],["BGS 10","bgs10"],["CGC 10","cgc10"],["SGC 10","sgc10"]];
+  const evRows=GRADERS.map(g=>{const e=gradeEV(c,g);return e?`<div class="evrow"><b>${g}</b><span class="note">expected ${usd(e.gross)} − ${usd(e.cost)} fees &amp; ship</span><span class="pill ${e.gain>0?"up":"down"}">${sgn(e.gain)}${usd(Math.abs(e.gain))}</span></div>`:`<div class="evrow"><b>${g}</b><span class="note">No recent ${g} 10 sales to price the top outcome</span><span></span></div>`;}).join("");
+  box.innerHTML=`
+    <div style="display:grid;gap:10px;align-content:start">${thumbHTML(c,"photo")}
+      <div class="note">${c.idConfidence!=null?`ID confidence ${Math.round(c.idConfidence*100)}%`:""}${c.idNotes?" · "+esc(c.idNotes):""}</div></div>
+    <div class="dmain">
+      <div class="dtitle"><div><div class="label">${esc([c.set,c.year].filter(Boolean).join(" · "))}</div><h2>${esc(c.name)}${c.number?` <span class="num" style="font-size:.7em;color:var(--muted)">#${esc(c.number)}</span>`:""}${c.example?'<span class="tag-ex">Example</span>':""}</h2><div class="sub">${esc([c.variant,c.language].filter(Boolean).join(" · "))}</div></div>
+        <span class="verdict ${a.cls}" style="font-size:14px">${esc(a.txt)}</span></div>
+      ${c.status!=="priced"?`<div class="banner">${c.status==="not_found"?"No matching price page was found for this card. Check the name, set and number below, then save to try again.":"Fetching prices for this card…"}</div>`:""}
+      <div class="quote"><span class="px">${usd(cur)}</span>${pillHTML(num(ch[series]),cur)}<span class="note">${esc(v[series]||"")}</span>
+        <span style="flex:1"></span>
+        <span class="seg" role="group" aria-label="Grade shown"><span class="knob" aria-hidden="true"></span>${SER.map(([k,l])=>`<button type="button" data-ser="${k}" aria-pressed="${k===series}">${l}</button>`).join("")}</span></div>
+      <div class="chartbox">${chartSVG(c,series)}
+        <div class="legend"><span><svg width="18" height="8"><line x1="0" x2="18" y1="4" y2="4" stroke="#8855FF" stroke-width="2.5"/></svg> Market price at each check</span>${c.priceUpdatedAt?`<span>Checked ${ago(c.priceUpdatedAt)}</span>`:""}</div></div>
+      <div class="grid2">
+        <div class="card-sec"><h3>Graded values</h3>
+          <table class="gtab"><thead><tr><th>Grade</th><th class="r">Price</th><th class="r">Move</th></tr></thead><tbody>
+          ${gradedRows.map(([l,k])=>`<tr><td>${l}</td><td class="r num">${num(p[k])==null?'<span class="note">no recent sales</span>':usd(num(p[k]))}</td><td class="r">${num(ch[k])==null?"":pillHTML(num(ch[k]),num(p[k]))}</td></tr>`).join("")}
+          </tbody></table>
+          ${c.pcUrl?`<a class="note" href="${esc(c.pcUrl)}" target="_blank" rel="noopener">Look it up on PriceCharting</a>`:""}</div>
+        <div class="card-sec"><h3>Grading desk</h3>
+          ${o?`<div class="label">Estimated grade from photo</div><div class="odds">${[["10","PSA 10"],["9","PSA 9"],["8","PSA 8"],["7","7 or lower"]].map(([k,l],i)=>`<div class="odd"><span>${l}</span><div class="bar"><i style="width:${(o[k]*100).toFixed(0)}%;--i:${i}"></i></div><span class="num r">${(o[k]*100).toFixed(0)}%</span></div>`).join("")}</div>
+          <div class="label" style="margin-top:6px">Gain vs selling raw (${usd(rawOf(c))})</div><div class="ev">${evRows}</div>
+          ${a.best?`<div class="note">${verdictText(c,a)}</div>`:""}`:`<div class="note">Add this card by photo to get a condition check and grade odds.</div>`}
+          ${cond.summary||cond.centering?`<dl class="cond">${cond.centering?`<dt>Centering</dt><dd>${esc(cond.centering)}</dd>`:""}${cond.corners?`<dt>Corners</dt><dd>${esc(cond.corners)}</dd>`:""}${cond.edges?`<dt>Edges</dt><dd>${esc(cond.edges)}</dd>`:""}${cond.surface?`<dt>Surface</dt><dd>${esc(cond.surface)}</dd>`:""}${cond.summary?`<dt>Overall</dt><dd>${esc(cond.summary)}</dd>`:""}</dl>`:""}
+        </div>
+      </div>
+      <form class="card-sec" id="editForm"><h3>Card details</h3>
+        <div class="fields"><input id="eName" value="${esc(c.name)}" aria-label="Name"><input id="eSet" value="${esc(c.set||"")}" aria-label="Set"><input id="eNum" value="${esc(c.number||"")}" aria-label="Number"></div>
+        <div class="fields" style="grid-template-columns:2fr 1fr"><input id="eVar" value="${esc(c.variant||"")}" placeholder="Variant (1st Edition, Holo, Alt Art…)" aria-label="Variant"><input id="eQty" type="number" min="1" value="${c.qty||1}" aria-label="Quantity"></div>
+        ${(c.matches||[]).length>1?`<label class="note" for="eMatch">Price page (pick another version if this one is wrong)</label><select id="eMatch">${c.matches.slice(0,10).map(m=>`<option value="${esc(m.id)}"${m.id===c.productId?" selected":""}>${esc(m.name)} · ${esc(m.set)}</option>`).join("")}</select>`:""}
+        <div class="actions"><button class="btn" type="submit">Save &amp; re-price</button><button class="btn" type="button" id="reprice">Re-check price now</button><span style="flex:1"></span><button class="btn danger" type="button" id="del">Delete card</button><span class="note" id="eMsg"></span></div>
+      </form>
+    </div>`;
+  placeKnob(box,false);
+  box.querySelectorAll("[data-ser]").forEach(b=>b.onclick=()=>{series=b.dataset.ser;renderDetail();});
+  $("editForm").onsubmit=async e=>{e.preventDefault();await saveCard(c.id,{name:$("eName").value.trim(),set:$("eSet").value.trim(),number:$("eNum").value.trim(),variant:$("eVar").value.trim(),qty:Math.max(1,+$("eQty").value||1),status:"pending",pcUrl:null,productId:null,matches:null},"Saved. Re-pricing now…");refreshPrices({ids:[c.id],force:true});};
+  $("reprice").onclick=async()=>{$("eMsg").textContent="Checking…";await refreshPrices({ids:[c.id],force:true});const m=$("eMsg");if(m)m.textContent=lastErr||"Updated.";};
+  const mSel=$("eMatch");if(mSel)mSel.onchange=async()=>{const m=(c.matches||[]).find(x=>x.id===mSel.value);if(!m)return;await saveCard(c.id,{productId:m.id,productName:m.name,pcUrl:pcLink(m.name),status:"pending",history:[],prices:{},changes:{}},"Switched. Re-pricing now…");refreshPrices({ids:[c.id],force:true});};
+  const del=$("del");let armed=false;
+  del.onclick=async()=>{if(!armed){armed=true;del.textContent="Tap again to delete";setTimeout(()=>{armed=false;if(del.isConnected)del.textContent="Delete card";},4000);return;}
+    try{await db.doc("cards/"+c.id).delete();selId=null;}catch(err){$("eMsg").textContent="Couldn't delete: "+(err.message||err.code);}};
+}
+function verdictText(c,a){
+  const raw=rawOf(c),b=a.best;
+  if(a.cls==="v-go")return `Sending to ${b.g} is expected to net about ${usd(b.e.gain)} more than selling raw, after fees and shipping.`;
+  if(a.cls==="v-maybe")return `${b.g} grading roughly breaks even (${sgn(b.e.gain)}${usd(Math.abs(b.e.gain))}). Worth it only if you're confident it's a 9 or better.`;
+  return `Fees outweigh the likely grade bump for this card. Selling or keeping it raw makes more sense.`;
+}
+async function saveCard(id,patch,msg){
+  if(!db)return;
+  try{await db.doc("cards/"+id).update(patch);const m=$("eMsg");if(m)m.textContent=msg;}catch(err){const m=$("eMsg");if(m)m.textContent="Couldn't save: "+(err.message||err.code);}
+}
+
+$("rows").addEventListener("click",e=>{const tr=e.target.closest("tr.row");if(!tr)return;selId=tr.dataset.id;series="ungraded";render();$("detail").scrollIntoView({behavior:matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth",block:"start"});});
+$("rows").addEventListener("keydown",e=>{if(e.key==="Enter"){const tr=e.target.closest("tr.row");if(tr)tr.click();}});
+$("sortSel").onchange=render;
+
+/* ---------- adding cards ---------- */
+function makeThumb(file){
+  return new Promise((res,rej)=>{const url=URL.createObjectURL(file);const img=new Image();
+    img.onload=()=>{const s=Math.min(1,420/Math.max(img.width,img.height));const cv=document.createElement("canvas");cv.width=Math.round(img.width*s);cv.height=Math.round(img.height*s);cv.getContext("2d").drawImage(img,0,0,cv.width,cv.height);URL.revokeObjectURL(url);res(cv.toDataURL("image/jpeg",0.78));};
+    img.onerror=()=>{URL.revokeObjectURL(url);rej(new Error("Couldn't read that image"));};img.src=url;});
+}
+function resizeForId(file){
+  return new Promise((res,rej)=>{const url=URL.createObjectURL(file);const img=new Image();
+    img.onload=()=>{const sc=Math.min(1,1024/Math.max(img.width,img.height));const cv=document.createElement("canvas");cv.width=Math.round(img.width*sc);cv.height=Math.round(img.height*sc);cv.getContext("2d").drawImage(img,0,0,cv.width,cv.height);URL.revokeObjectURL(url);res(cv.toDataURL("image/jpeg",0.85).split(",")[1]);};
+    img.onerror=()=>{URL.revokeObjectURL(url);rej(new Error("Couldn't read that image"));};img.src=url;});
+}
+async function addFromPhoto(file){
+  const q=document.createElement("div");q.className="qitem";q.innerHTML=`<span>Reading ${esc(file.name)}…</span>`;$("queue").prepend(q);
+  let thumb=null,b64=null;
+  try{thumb=await makeThumb(file);b64=await resizeForId(file);q.innerHTML=`<img src="${thumb}" alt=""><span>Identifying card…</span>`;}catch(e){q.innerHTML=`<span>${esc(e.message)}</span>`;return;}
+  try{
+    const {card:r,matches}=await api("/identify",{method:"POST",body:JSON.stringify({imageBase64:b64,mediaType:"image/jpeg"})});
+    if(!r||r.isPokemonCard===false||!r.name){q.querySelector("span").textContent="That doesn't look like a Pokémon card. Try a clearer photo.";return;}
+    const m0=(matches||[])[0];
+    const doc={name:r.name,set:r.set||"",number:r.number||"",year:r.year??null,variant:r.variant||"",language:r.language||"English",
+      idConfidence:r.confidence??null,idNotes:r.idNotes||"",condition:r.condition||{},odds:r.odds||null,
+      matches:matches||[],productId:m0?m0.id:null,productName:m0?m0.name:null,pcUrl:m0?pcLink(m0.name):null,
+      thumb,qty:1,status:m0?"pending":"not_found",addedAt:Date.now(),history:[],sales:[],prices:{},changes:{},volume:{}};
+    const ref=await db.collection("cards").add(doc);
+    q.querySelector("span").textContent=`Added ${doc.name}${doc.set?" · "+doc.set:""}${doc.number?" #"+doc.number:""}. Fetching prices…`;
+    selId=ref.id;
+    refreshPrices({ids:[ref.id],force:true});
+  }catch(e){q.querySelector("span").textContent=e.message||String(e);}
+}
+async function handleFiles(files){
+  if(!server.url){$("sampleNote").hidden=false;$("sampleNote").textContent="Add your server address under Settings at the bottom of the page first.";$("settings").open=true;return;}
+  $("sampleNote").hidden=true;
+  for(const f of files)await addFromPhoto(f);
+}
+$("fileIn").onchange=e=>{handleFiles([...e.target.files]);e.target.value="";};
+const drop=$("drop");
+drop.addEventListener("dragover",e=>{e.preventDefault();drop.classList.add("over");});
+drop.addEventListener("dragleave",()=>drop.classList.remove("over"));
+drop.addEventListener("drop",e=>{e.preventDefault();drop.classList.remove("over");handleFiles([...e.dataTransfer.files].filter(f=>f.type.startsWith("image/")));});
+$("manual").onsubmit=async e=>{e.preventDefault();if(!server.url){$("mMsg").textContent="Add your server address under Settings first.";$("settings").open=true;return;}
+  const name=$("mName").value.trim();if(!name)return;
+  try{const ref=await db.collection("cards").add({name,set:$("mSet").value.trim(),number:$("mNum").value.trim(),variant:"",language:"English",qty:1,status:"pending",addedAt:Date.now(),odds:null,condition:{},history:[],sales:[],prices:{},changes:{},volume:{}});
+    selId=ref.id;$("mMsg").textContent="Added. Fetching prices…";$("manual").reset();refreshPrices({ids:[ref.id],force:true});}catch(err){$("mMsg").textContent="Couldn't add: "+(err.message||err.code);}};
+
+/* examples */
+let exArmed=false;
+$("exRemove").onclick=async()=>{const b=$("exRemove");if(!exArmed){exArmed=true;b.textContent="Tap again to remove";setTimeout(()=>{exArmed=false;b.textContent="Remove examples";},4000);return;}
+  for(const c of cards.filter(c=>c.example)){try{await db.doc("cards/"+c.id).delete();}catch(e){}}};
+
+/* fees */
+function fillFees(){$("fPSA").value=fees.PSA;$("fBGS").value=fees.BGS;$("fCGC").value=fees.CGC;$("fSGC").value=fees.SGC;$("fShip").value=fees.ship;}
+$("feeSave").onclick=async()=>{fees={PSA:+$("fPSA").value||0,BGS:+$("fBGS").value||0,CGC:+$("fCGC").value||0,SGC:+$("fSGC").value||0,ship:+$("fShip").value||0};render();
+  if(db){try{await db.doc("settings/fees").set(fees);$("feeMsg").textContent="Saved.";}catch(e){$("feeMsg").textContent="Used for this visit only; couldn't save.";}}};
+fillFees();
+
+/* ---------- local storage (this browser) ---------- */
+const LS="holo-ticker-web";
+function loadMem(){try{const m=JSON.parse(localStorage.getItem(LS)||"null");if(m&&m.cards)return m;}catch(e){}return {cards:{},settings:{}};}
+let mem=loadMem();const listeners=new Set();
+function persist(){try{localStorage.setItem(LS,JSON.stringify(mem));}catch(e){$("feedStatus").textContent="Browser storage is full. Delete a few cards to keep saving.";}}
+function emit(){persist();listeners.forEach(f=>f());}
+const rid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+db={
+  collection(name){return{
+    add:async d=>{const id=rid();(mem[name]=mem[name]||{})[id]=d;emit();return{id};},
+    onSnapshot(next){const f=()=>next({docs:Object.entries(mem[name]||{}).map(([id,d])=>({id,data:()=>d}))});listeners.add(f);f();return()=>listeners.delete(f);}}},
+  doc(path){const [c,id]=path.split("/");mem[c]=mem[c]||{};return{
+    update:async p=>{if(!mem[c][id])throw new Error("That card no longer exists.");mem[c][id]={...mem[c][id],...p};emit();},
+    set:async d=>{mem[c][id]=d;emit();},
+    delete:async()=>{delete mem[c][id];emit();},
+    onSnapshot(next){const f=()=>next({exists:!!mem[c][id],data:()=>mem[c][id]});listeners.add(f);f();return()=>listeners.delete(f);}}}
+};
+window.addEventListener("storage",e=>{if(e.key===LS){mem=loadMem();listeners.forEach(f=>f());}});
+
+/* ---------- server ---------- */
+let server={url:"",key:""};
+try{server={...server,...(JSON.parse(localStorage.getItem(LS+"-server")||"{}"))};}catch(e){}
+$("sUrl").value=server.url;$("sKey").value=server.key;
+const pcLink=name=>"https://www.pricecharting.com/search-products?type=prices&q="+encodeURIComponent("pokemon "+name);
+async function api(path,init={}){
+  if(!server.url)throw new Error("Add your server address under Settings first.");
+  let res;
+  try{res=await fetch(server.url.replace(/\/+$/,"")+path,{...init,headers:{"content-type":"application/json","x-app-key":server.key}});}
+  catch(e){throw new Error("Can't reach your server. Check the address in Settings.");}
+  const body=await res.json().catch(()=>({}));
+  if(!res.ok)throw new Error(body.error||("Server error "+res.status));
+  return body;
+}
+$("sSave").onclick=async()=>{server={url:$("sUrl").value.trim(),key:$("sKey").value.trim()};
+  try{localStorage.setItem(LS+"-server",JSON.stringify(server));}catch(e){}
+  $("sMsg").textContent="Checking…";
+  try{await api("/health");$("sMsg").textContent="Connected.";render();refreshPrices();}catch(e){$("sMsg").textContent=e.message;}};
+
+/* ---------- pricing ---------- */
+const PKEYS=["ungraded","grade7","grade8","grade9","grade95","psa10","bgs10","cgc10","sgc10"];
+const STALE=30*60e3,GAP=50*60e3;
+let pricing=false,lastErr=null;
+function changesFrom(history,prices){
+  const out={};const target=Date.now()-24*3600e3;const prior=history.slice(0,-1);
+  for(const k of PKEYS){const cur=num(prices[k]);let best=null;
+    for(const h of prior)if(num(h[k])!=null&&(!best||Math.abs(h.t-target)<Math.abs(best.t-target)))best=h;
+    out[k]=cur!=null&&best?+(cur-best[k]).toFixed(2):null;}
+  return out;
+}
+async function refreshPrices({ids=null,force=false}={}){
+  if(!server.url||pricing)return;
+  pricing=true;lastErr=null;
+  try{
+    for(const c of cards){
+      if((ids&&!ids.includes(c.id))||c.productId||(c.status==="not_found"&&!force))continue;
+      const q=[c.name,c.set,c.number,(c.variant||"").match(/1st Edition|Shadowless|Reverse/i)?.[0]].filter(Boolean).join(" ");
+      const r=await api("/search?q="+encodeURIComponent(q)).catch(e=>{lastErr=e.message;return{matches:[]};});
+      const m=r.matches[0];
+      await db.doc("cards/"+c.id).update(m?{matches:r.matches,productId:m.id,productName:m.name,pcUrl:pcLink(m.name),status:"pending"}:{matches:[],status:"not_found"});
+    }
+    const now=Date.now();
+    const due=cards.filter(c=>c.productId&&(!ids||ids.includes(c.id))&&(force||c.status!=="priced"||!c.priceUpdatedAt||now-c.priceUpdatedAt>STALE));
+    for(let i=0;i<due.length;i+=20){
+      const batch=due.slice(i,i+20);
+      const {results}=await api("/prices",{method:"POST",body:JSON.stringify({ids:batch.map(c=>c.productId)})});
+      const t=Date.now();
+      for(const c of batch){
+        const r=results[c.productId];const cur=cards.find(x=>x.id===c.id);if(!r||!cur)continue;
+        const snap={t,...r.prices};const h=cur.history||[];const last=h[h.length-1];
+        const history=(last&&t-last.t<GAP?[...h.slice(0,-1),{...snap,t:last.t}]:[...h,snap]).slice(-500);
+        await db.doc("cards/"+c.id).update({prices:r.prices,changes:changesFrom(history,r.prices),history,productName:r.productName,status:"priced",priceUpdatedAt:t});
+      }
+    }
+  }catch(e){lastErr=e.message;$("feedStatus").textContent=e.message;}
+  finally{pricing=false;}
+}
+
+/* ---------- boot ---------- */
+db.collection("cards").onSnapshot(s=>{cards=s.docs.map(d=>({id:d.id,...d.data()}));if(selId&&!cards.find(c=>c.id===selId))selId=null;animSpark=firstSnap;render();firstSnap=false;animSpark=false;});
+db.doc("settings/fees").onSnapshot(s=>{if(s.exists){fees={...DEFAULT_FEES,...s.data()};fillFees();render();}});
+refreshPrices();
+setInterval(()=>refreshPrices(),STALE);
+document.addEventListener("visibilitychange",()=>{if(!document.hidden)refreshPrices();});
+})();
+</script>
+
+</body>
+</html>
